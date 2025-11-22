@@ -1,0 +1,59 @@
+-- UNIVERSAL FISHING EXPLOIT V1 (AUTO CAST, AUTO REEL, AUTO CATCH)
+-- Works for most fishing games using RemoteEvents
+
+if getgenv().FISHING_RUNNING then
+    print("Already running.")
+    return
+end
+getgenv().FISHING_RUNNING = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+
+print("[FISHING] Auto System Loaded")
+
+-- FIND REMOTES AUTOMATICALLY
+local castRemote = nil
+local reelRemote = nil
+
+for _, v in ipairs(RS:GetDescendants()) do
+    if v:IsA("RemoteEvent") then
+        local n = v.Name:lower()
+
+        if not castRemote and (n:find("start") or n:find("cast") or n:find("fish")) then
+            castRemote = v
+        end
+        if not reelRemote and (n:find("reel") or n:find("pull") or n:find("drag")) then
+            reelRemote = v
+        end
+    end
+end
+
+if not castRemote then
+    warn("[FISHING] Cast Remote Tidak Ditemukan")
+else
+    print("[FISHING] Cast Remote:", castRemote:GetFullName())
+end
+
+if not reelRemote then
+    warn("[FISHING] Reel Remote Tidak Ditemukan")
+else
+    print("[FISHING] Reel Remote:", reelRemote:GetFullName())
+end
+
+-- SETTINGS
+local AUTO_CAST = true
+local AUTO_REEL = true
+local AUTO_CATCH = true
+local LOOP_SPEED = 0.25
+
+-- MAIN LOOP
+task.spawn(function()
+    while wait(LOOP_SPEED) do
+        if not getgenv().FISHING_RUNNING then break end
+
+        -- AUTO CAST
+        if AUTO_CAST and castRemote then
+            pcall(function()
+                castRemote:Fire
