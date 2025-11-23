@@ -1,0 +1,176 @@
+-- 💠 PERDITZY HUB • FINAL EX VERSION
+local OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/jensonhirst/Orion/main/source'))()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+
+local Net = RS.Packages._Index["sleitnick_net@0.2.0"].net
+local Events = {
+    fishing = Net:WaitForChild("RE/FishingCompleted"),
+    charge = Net:WaitForChild("RF/ChargeFishingRod"),
+    minigame = Net:WaitForChild("RF/RequestFishingMinigameStarted")
+}
+
+-- Vars
+local InstantFishing, AutoFishV1, AutoFishV2 = false, false, false
+local AntiAFK = false
+local V1Delay = 1.35
+local isFishing = false
+
+-- Core
+local function castRod()
+    pcall(function()
+        Events.charge:InvokeServer(1755848498.4834)
+        task.wait(0.05)
+        Events.minigame:InvokeServer(1.285, 1)
+    end)
+end
+
+local function reel()
+    pcall(function()
+        Events.fishing:FireServer()
+    end)
+end
+
+local function fishLoop()
+    while InstantFishing do
+        if not isFishing then
+            isFishing = true
+            castRod()
+            task.wait(0.8)
+            reel()
+            task.wait(0.25)
+            isFishing = false
+        end
+        task.wait(0.05)
+    end
+end
+
+local function autoV1()
+    while AutoFishV1 do
+        if not isFishing then
+            isFishing = true
+            castRod()
+            task.wait(V1Delay)
+            reel()
+            task.wait(0.55)
+            isFishing = false
+        end
+        task.wait(0.05)
+    end
+end
+
+local function autoV2()
+    while AutoFishV2 do
+        if not isFishing then
+            isFishing = true
+            castRod()
+            task.wait(0.18)
+            reel()
+            task.wait(0.15)
+            isFishing = false
+        end
+        task.wait(0.03)
+    end
+end
+
+local function antiAfkLoop()
+    local vu = game:GetService("VirtualUser")
+    while AntiAFK do
+        task.wait(60)
+        pcall(function()
+            vu:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+            task.wait(1)
+            vu:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        end)
+    end
+end
+
+-- UI
+local Window = OrionLib:MakeWindow({
+    Name = "PerdiTzy Hub • Final EX",
+    IntroEnabled = true,
+    IntroText = "PerdiTzy Hub Loaded",
+    SaveConfig = false,
+    HidePremium = false,
+    Icon = "rbxassetid://77438740377234"
+})
+
+-- 1️⃣ INFO TAB
+local InfoTab = Window:MakeTab({Name="ℹ INFO", Icon="rbxassetid://6022668885"})
+InfoTab:AddLabel("💠 PerdiTzy Hub — Final Build")
+InfoTab:AddParagraph("⚠ PerdiTzy Hub Alert!", 
+"This script is still under development!\n" ..
+"There is a possibility it may get detected if used in public servers!\n" ..
+"If you have suggestions or find bugs, report to TikTok @in4m4zy!\n\n" ..
+"📌 Use at your own risk.")
+
+-- 2️⃣ AUTO FISHING TAB
+local FishTab = Window:MakeTab({Name="🎣 AUTO FISHING", Icon="rbxassetid://6026568249"})
+FishTab:AddParagraph("Auto Features", "Automation settings below:")
+
+FishTab:AddToggle({
+    Name = "🔱 Auto Fishing V1",
+    Callback = function(v)
+        AutoFishV1 = v
+        if v then task.spawn(autoV1) end
+    end
+})
+
+FishTab:AddTextbox({
+    Name = "⏱ Custom Delay (V1)",
+    Default = "1.35",
+    Placeholder = "ex: 1.25",
+    Callback = function(v)
+        V1Delay = tonumber(v) or 1.35
+    end
+})
+
+FishTab:AddToggle({
+    Name = "🔱 Auto Fishing V2 (Super Fast)",
+    Callback = function(v)
+        AutoFishV2 = v
+        if v then task.spawn(autoV2) end
+    end
+})
+
+FishTab:AddToggle({
+    Name = "⚡ Instant Fishing",
+    Callback = function(v)
+        InstantFishing = v
+        if v then task.spawn(fishLoop) end
+    end
+})
+
+-- 3️⃣ AUTO QUEST TAB (placeholder)
+local QuestTab = Window:MakeTab({Name="📜 AUTO QUEST", Icon="rbxassetid://6034684934"})
+QuestTab:AddParagraph("Coming Soon", "Auto Quest Features will be added in the next update.")
+
+-- 4️⃣ SHOP TAB (placeholder)
+local ShopTab = Window:MakeTab({Name="🛒 SHOP", Icon="rbxassetid://6026663719"})
+ShopTab:AddParagraph("Coming Soon", "Shop automation will be added in the next update.")
+
+-- 5️⃣ TELEPORT TAB (placeholder)
+local TeleTab = Window:MakeTab({Name="🗺 TELEPORT", Icon="rbxassetid://6026568198"})
+TeleTab:AddParagraph("Coming Soon", "Teleport list will be added soon.")
+
+-- 6️⃣ MISC TAB
+local MiscTab = Window:MakeTab({Name="🧩 MISC", Icon="rbxassetid://6022668965"})
+MiscTab:AddButton({
+    Name = "📌 Execute Infinite Yield",
+    Callback = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+    end
+})
+
+MiscTab:AddToggle({
+    Name = "🛡 Anti-AFK",
+    Callback = function(v)
+        AntiAFK = v
+        if v then task.spawn(antiAfkLoop) end
+    end
+})
+
+OrionLib:Init()
+print("✨ PerdiTzy Hub Final EX Loaded")
