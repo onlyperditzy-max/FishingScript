@@ -1,0 +1,119 @@
+-- PerdiTzy Hub (WindUI) — Final Merge
+-- Name: PerdiTzy Hub
+-- Author: Perdi
+
+-- Load WindUI (try local require first, fallback to raw)
+local WindUI
+do
+    local ok, result = pcall(function()
+        return require("./src/Init")
+    end)
+    if ok and result then
+        WindUI = result
+    else
+        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua"))()
+    end
+end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local PlaceId = game.PlaceId
+
+local Net = nil
+pcall(function()
+    Net = RS:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
+end)
+
+local function GetRemote(name)
+    if not Net then return nil end
+    return Net:FindFirstChild(name)
+end
+
+local REMOTES = {
+    EquipTool = GetRemote("RE/EquipToolFromHotbar"),
+    ChargeRod = GetRemote("RF/ChargeFishingRod"),
+    StartMini = GetRemote("RF/RequestFishingMinigameStarted"),
+    FinishFish = GetRemote("RE/FishingCompleted"),
+    SellAll = GetRemote("RF/SellAllItems"),
+    StartDeep = GetRemote("RF/StartDeepSeaQuest"),
+    QuestProgress = GetRemote("RF/QuestProgress"),
+    CompleteQuest = GetRemote("RF/CompleteQuest"),
+    ClaimReward = GetRemote("RF/ClaimReward"),
+    BuyBait = GetRemote("RF/BuyBait"),
+    BuyRod = GetRemote("RF/BuyRod")
+}
+
+local DEFAULT = { V1 = 1.35, V2 = 0.18, Instant = 0.8 }
+
+local state = {
+    AutoFishing = false,
+    AutoSell = false,
+    Blatant = false,
+    AutoV1 = false,
+    AutoV2 = false,
+    Instant = false,
+    V1Delay = DEFAULT.V1,
+    V2Delay = DEFAULT.V2,
+    InstantDelay = DEFAULT.Instant,
+    AutoDeepQuest = false,
+    AutoBuyBait = false,
+    AutoBuyRod = false,
+    AntiAFK = false,
+    AutoRejoin = false,
+    ServerHop = false
+}
+
+local Islands = {
+    ["Treasure Room"] = CFrame.new(-3596.64355, -280.03598, -1633.95508),
+    ["Kohana Volcano"] = CFrame.new(-516.919983, 24.0000591, 191.007462),
+    ["Sisyphus Island"] = CFrame.new(-3667.55615, -135.574417, -900.992554),
+    ["Fisherman Island"] = CFrame.new(-3720.11, -131.22, -1480.24)
+}
+
+local function tpTo(cf)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = cf + Vector3.new(0,3,0)
+    end
+end
+
+local function equipRodSlot(slotIndex)
+    if REMOTES.EquipTool then
+        pcall(function() REMOTES.EquipTool:FireServer(slotIndex) end)
+    else
+        pcall(function()
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            if bp then
+                for _, obj in pairs(bp:GetChildren()) do
+                    if obj:IsA("Tool") then
+                        obj.Parent = LocalPlayer.Character
+                        break
+                    end
+                end
+            end
+        end)
+    end
+end
+
+local function castRod()
+    pcall(function()
+        if REMOTES.ChargeRod then REMOTES.ChargeRod:InvokeServer(tick()) end
+        task.wait(0.03)
+        if REMOTES.StartMini then REMOTES.StartMini:InvokeServer(1.285, 1) end
+    end)
+end
+
+local function reel()
+    pcall(function()
+        if REMOTES.FinishFish then REMOTES.FinishFish:FireServer() end
+    end)
+end
+
+local function sellAll()
+    if REMOTES.SellAll then pcall(function() REMOTES.SellAll:InvokeServer() end) end
+end
