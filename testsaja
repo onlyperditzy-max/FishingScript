@@ -1,0 +1,677 @@
+-- Perdi Hub — Full (WindUI) — The Forge Edition
+-- Full integrated single-file script (UI + feature implementations)
+-- NOTE: Adapt the TODO sections to the actual game's Remote/Instance names.
+
+-- --------------------------
+-- Load WindUI (stable)
+-- --------------------------
+local WindUI
+local ok, result = pcall(function()
+    return require("./src/Init")
+end)
+if ok and result then
+    WindUI = result
+else
+    WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua"))()
+end
+
+-- --------------------------
+-- Utility / Shortcuts
+-- --------------------------
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Character = function() return LocalPlayer and LocalPlayer.Character end
+local Humanoid = function() local c = Character() return c and c:FindFirstChildOfClass("Humanoid") end
+local RunService = game:GetService("RunService")
+local PathfindingService = game:GetService("PathfindingService")
+local TweenService = game:GetService("TweenService")
+
+local function safeGetCharacter()
+    local c = Character()
+    if not c then
+        LocalPlayer.CharacterAdded:Wait()
+        c = Character()
+    end
+    return c
+end
+
+-- --------------------------
+-- Create Window
+-- --------------------------
+local Window = WindUI:CreateWindow({
+    Title = "Perdi Hub | The Forge",
+    Author = "Perdi",
+    Folder = "perdihub",
+    Icon = "sfsymbols:hammer",
+    IconSize = 42,
+    NewElements = true,
+    HideSearchBar = false,
+    OpenButton = { Title = "Open Perdi Hub" },
+    KeySystem = {
+        Title = "Perdi Hub Key System",
+        Note = "Enter your key (default 1234)",
+        KeyValidator = function(key) return key == "1234" end
+    }
+})
+
+Window:Tag({ Title = "Perdi Hub v" .. (WindUI.Version or "1.0"), Icon = "info", Color = Color3.fromHex("#1c1c1c") })
+
+-- --------------------------
+-- State containers
+-- --------------------------
+local State = {
+    -- Player
+    Fly = {Enabled = false, Speed = 50, Key = Enum.KeyCode.F},
+    Noclip = {Enabled = false, Key = Enum.KeyCode.N},
+    InfiniteStamina = false,
+    NoJumpCooldown = false,
+    WalkSpeed = 16,
+    JumpPower = 50,
+    -- Auto Farm
+    AutoMine = false,
+    RockType = "All",
+    AvoidMobs = false,
+    AutoMobFarm = false,
+    MobType = "All",
+    UsePathfinding = false,
+    VisualizePath = false,
+    TweenSpeed = 80,
+    OffsetPosition = 0,
+    OffsetDistance = 5,
+    -- Combat
+    AutoParry = false,
+    ParryRange = 10,
+    ParryDelay = 0.25,
+    -- Forge
+    AutoForgeInstant = false,
+    ForgeItemType = "Pickaxe",
+    UseBestOres = true,
+    OreTypes = "All",
+    MinOres = 5,
+    AutoForgeManual = false,
+    -- Inventory
+    AutoEnhance = false,
+    EnhanceUntil = 5,
+    MinQuality = 20,
+    EnhanceDelay = 1,
+    OnlySelectedTypes = false,
+    EnhanceItemTypes = {"Pickaxe"},
+    AutoSell = false,
+    SellBelowQuality = 15,
+    -- Shop
+    ShopCategory = "Pickaxe",
+    ShopAmount = 1,
+    -- ESP
+    PlayerESP = false,
+    ESPBoxes = false,
+    ESPNames = false,
+    ESPHealth = false,
+    ESPDistance = false,
+    ESPWeapon = false,
+    -- Mob & World ESP
+    MobESP = false,
+    MobESPBoxes = false,
+    MobESPNames = false,
+    MobESPHealth = false,
+    MobESPDistance = false,
+    OreESP = false,
+    OreTypesSelected = {"All"},
+    ShopESP = false,
+    ESPMaxDistance = 500,
+    -- Features
+    Features = {AutoMine=false, AutoForge=false, TheForge=false},
+}
+
+-- --------------------------
+-- Helper functions
+-- --------------------------
+
+local function notify(title, content)
+    WindUI:Notify({ Title = title or "Perdi Hub", Content = content or "" })
+end
+
+-- Simpler setclipboard wrapper
+local function toClipboard(text)
+    pcall(function() setclipboard(text) end)
+end
+
+-- Basic fly implementation
+local flyConnection
+local function enableFly(speed)
+    speed = speed or State.Fly.Speed
+    local char = safeGetCharacter()
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local bodyGyro = Instance.new("BodyGyro")
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyGyro.P = 9e4
+    bodyGyro.MaxTorque = Vector3.new(9e9,9e9,9e9)
+    bodyGyro.CFrame = root.CFrame
+    bodyVelocity.MaxForce = Vector3.new(9e9,9e9,9e9)
+    bodyVelocity.Velocity = Vector3.new(0,0,0)
+    bodyGyro.Parent = root
+    bodyVelocity.Parent = root
+
+    flyConnection = RunService.Heartbeat:Connect(function()
+        local hrp = root
+        local cam = workspace.CurrentCamera
+        local move = Vector3.new(0,0,0)
+        local ks = game:GetService("UserInputService"):GetKeysPressed()
+        -- simple movement using camera look vector and WASD
+        local uis = game:GetService("UserInputService")
+        local forward = (cam.CFrame.LookVector * (uis:IsKeyDown(Enum.KeyCode.W) and 1 or 0))
+        local backward = (cam.CFrame.LookVector * (uis:IsKeyDown(Enum.KeyCode.S) and -1 or 0))
+        local right = (cam.CFrame.RightVector * (uis:IsKeyDown(Enum.KeyCode.D) and 1 or 0))
+        local left = (cam.CFrame.RightVector * (uis:IsKeyDown(Enum.KeyCode.A) and -1 or 0))
+        local up = (Vector3.new(0,1,0) * (uis:IsKeyDown(Enum.KeyCode.E) and 1 or 0))
+        local down = (Vector3.new(0,1,0) * (uis:IsKeyDown(Enum.KeyCode.Q) and -1 or 0))
+        move = (forward + backward + right + left + up + down)
+        if move.Magnitude > 0 then
+            bodyVelocity.Velocity = move.Unit * speed
+        else
+            bodyVelocity.Velocity = Vector3.new(0,0,0)
+        end
+        bodyGyro.CFrame = cam.CFrame
+    end)
+    notify("Fly", "Enabled")
+end
+
+local function disableFly()
+    local char = Character()
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            for _,v in ipairs(root:GetChildren()) do
+                if v:IsA("BodyGyro") or v:IsA("BodyVelocity") then
+                    v:Destroy()
+                end
+            end
+        end
+    end
+    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    notify("Fly", "Disabled")
+end
+
+-- Noclip simple implementation
+local noclipConn
+local function setNoclip(enabled)
+    local char = Character()
+    if not char then return end
+    local function noclipFunc()
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = not enabled and true or false
+            end
+        end
+    end
+    if enabled then
+        nopcall = pcall(function() noclipConn = RunService.Stepped:Connect(noclipFunc) end)
+        notify("Noclip", "Enabled")
+    else
+        if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+        noclipFunc() -- reset collides
+        notify("Noclip", "Disabled")
+    end
+end
+
+-- Walkspeed / Jumppower setter
+local function applyMovement()
+    local hum = Humanoid()
+    if hum then
+        pcall(function()
+            hum.WalkSpeed = State.WalkSpeed
+            hum.JumpPower = State.JumpPower
+        end)
+    end
+end
+
+-- Basic parry auto (naive): swings tool when enemy within range
+local function attemptParry()
+    if not State.AutoParry then return end
+    local char = Character()
+    if not char then return end
+    local hum = Humanoid()
+    if not hum then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, plr in pairs(workspace:GetDescendants()) do
+        -- NOTE: This is a placeholder: game-specific mob detection required
+    end
+end
+
+-- --------------------------
+-- Pathfinding + Movement helpers (for AutoMine/MobFarm)
+-- --------------------------
+local function moveToPosition(targetPos, opts)
+    opts = opts or {}
+    if State.UsePathfinding then
+        local char = safeGetCharacter()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return false end
+
+        local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+        path:ComputeAsync(root.Position, targetPos)
+        if path.Status ~= Enum.PathStatus.Success then
+            return false
+        end
+
+        local waypoints = path:GetWaypoints()
+        -- visualize if requested
+        local connections = {}
+        if State.VisualizePath then
+            local prev = nil
+            for i,wp in ipairs(waypoints) do
+                local part = Instance.new("Part")
+                part.Anchored = true
+                part.CanCollide = false
+                part.Size = Vector3.new(0.5,0.5,0.5)
+                part.Material = Enum.Material.Neon
+                part.Color = Color3.fromRGB(0,200,255)
+                part.CFrame = CFrame.new(wp.Position)
+                part.Parent = workspace
+                delay(10, function() pcall(function() part:Destroy() end) end)
+            end
+        end
+
+        for _, wp in ipairs(waypoints) do
+            local success, err = pcall(function()
+                local targetCFrame = CFrame.new(wp.Position) * CFrame.new(0, State.OffsetPosition, 0)
+                local tweenInfo = TweenInfo.new((root.Position - wp.Position).Magnitude / (State.TweenSpeed), Enum.EasingStyle.Linear)
+                local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
+                tween:Play()
+                tween.Completed:Wait()
+            end)
+            if not success then
+                -- fallback to teleport little to avoid stuck
+                root.CFrame = CFrame.new(wp.Position + Vector3.new(0, State.OffsetPosition, 0))
+            end
+        end
+        return true
+    else
+        -- direct tween/teleport
+        local char = safeGetCharacter()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return false end
+        local tweenInfo = TweenInfo.new((root.Position - targetPos).Magnitude / (State.TweenSpeed), Enum.EasingStyle.Linear)
+        local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame.new(targetPos + Vector3.new(0, State.OffsetPosition, 0))})
+        tween:Play()
+        tween.Completed:Wait()
+        return true
+    end
+end
+
+-- --------------------------
+-- AutoMine core (VERY GENERIC)
+-- --------------------------
+local automineLoop
+local function startAutoMine()
+    if State.AutoMine and not automineLoop then
+        automineLoop = RunService.Heartbeat:Connect(function()
+            if not State.AutoMine then return end
+            -- TODO: Adapt the following detection to the game's ore instances.
+            -- Generic approach: look for Parts named "Ore", "Rock", or with tag.
+            local oreCandidate = nil
+            for _, part in pairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:match("[Oo]re") or part.Name:match("[Rr]ock") then
+                    -- simple filter by distance and by rock type (if State.RockType ~= "All")
+                    local dist = (safeGetCharacter():FindFirstChild("HumanoidRootPart").Position - part.Position).Magnitude
+                    if dist <= 300 then
+                        oreCandidate = part
+                        break
+                    end
+                end
+            end
+            if oreCandidate then
+                local ok, res = pcall(function()
+                    moveToPosition(oreCandidate.Position)
+                end)
+                wait(0.2)
+                -- TODO: Call the game's mining remote / activate tool pickup
+                -- Example: game:GetService("ReplicatedStorage").Remotes.Mine:FireServer(oreCandidate)
+            else
+                -- idle small wait
+                wait(0.5)
+            end
+        end)
+        notify("AutoMine", "Started")
+    elseif not State.AutoMine and automineLoop then
+        automineLoop:Disconnect()
+        automineLoop = nil
+        notify("AutoMine", "Stopped")
+    end
+end
+
+-- --------------------------
+-- AutoMobFarm core (generic)
+-- --------------------------
+local automobLoop
+local function startAutoMobFarm()
+    if State.AutoMobFarm and not automobLoop then
+        automobLoop = RunService.Heartbeat:Connect(function()
+            if not State.AutoMobFarm then return end
+            -- TODO: adapt mob name detection to game mob models
+            local targetMob = nil
+            for _, mob in pairs(workspace:GetDescendants()) do
+                if mob:IsA("Model") and mob:FindFirstChild("Humanoid") then
+                    local root = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+                    if root then
+                        local dist = (safeGetCharacter():FindFirstChild("HumanoidRootPart").Position - root.Position).Magnitude
+                        if dist <= 200 then
+                            targetMob = mob
+                            break
+                        end
+                    end
+                end
+            end
+            if targetMob then
+                moveToPosition((targetMob.PrimaryPart or targetMob:FindFirstChild("HumanoidRootPart") or targetMob:FindFirstChildWhichIsA("BasePart")).Position)
+                wait(0.2)
+                -- TODO: Attack/Use tool remote call
+                -- Example: game.ReplicatedStorage.Remotes.Attack:FireServer(targetMob)
+            else
+                wait(0.5)
+            end
+        end)
+        notify("AutoMobFarm", "Started")
+    elseif not State.AutoMobFarm and automobLoop then
+        automobLoop:Disconnect()
+        automobLoop = nil
+        notify("AutoMobFarm", "Stopped")
+    end
+end
+
+-- --------------------------
+-- AutoForge (placeholder)
+-- --------------------------
+local autoforgeLoop
+local function startAutoForge()
+    if State.AutoForgeInstant and not autoforgeLoop then
+        autoforgeLoop = RunService.Heartbeat:Connect(function()
+            if not State.AutoForgeInstant then return end
+            -- TODO: identify forge instance & perform remote call to forge using best ores
+            -- Example placeholder:
+            -- local forgeRemote = game:GetService("ReplicatedStorage"):FindFirstChild("ForgeRemote")
+            -- if forgeRemote then forgeRemote:FireServer({item=State.ForgeItemType, ores=...}) end
+            wait(1)
+        end)
+        notify("AutoForge", "Started")
+    elseif not State.AutoForgeInstant and autoforgeLoop then
+        autoforgeLoop:Disconnect()
+        autoforgeLoop = nil
+        notify("AutoForge", "Stopped")
+    end
+end
+
+-- --------------------------
+-- Auto Enhance (placeholder)
+-- --------------------------
+local autoenhanceLoop
+local function startAutoEnhance()
+    if State.AutoEnhance and not autoenhanceLoop then
+        autoenhanceLoop = RunService.Heartbeat:Connect(function()
+            if not State.AutoEnhance then return end
+            -- TODO: call enhance remote or simulate UI clicks
+            wait(State.EnhanceDelay)
+        end)
+        notify("AutoEnhance", "Started")
+    elseif not State.AutoEnhance and autoenhanceLoop then
+        autoenhanceLoop:Disconnect()
+        autoenhanceLoop = nil
+        notify("AutoEnhance", "Stopped")
+    end
+end
+
+-- --------------------------
+-- Auto Sell (placeholder)
+-- --------------------------
+local autosellLoop
+local function startAutoSell()
+    if State.AutoSell and not autosellLoop then
+        autosellLoop = RunService.Heartbeat:Connect(function()
+            if not State.AutoSell then return end
+            -- TODO: implement sell using game's remote
+            wait(1)
+        end)
+        notify("AutoSell", "Started")
+    elseif not State.AutoSell and autosellLoop then
+        autosellLoop:Disconnect()
+        autosellLoop = nil
+        notify("AutoSell", "Stopped")
+    end
+end
+
+-- --------------------------
+-- ESP helper minimal implementation
+-- --------------------------
+local ESPs = {}
+
+local function clearAllESP()
+    for k,v in pairs(ESPs) do
+        if v and v:FindFirstChild("PerdiESP") then
+            pcall(function() v.PerdiESP:Destroy() end)
+        end
+    end
+    ESPs = {}
+end
+
+local function createESPForModel(model, options)
+    -- options: {box, name, health, distance, weapon}
+    if not model or not model.PrimaryPart then return end
+    if ESPs[model] then return end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "PerdiESP"
+    billboard.Size = UDim2.new(0,150,0,40)
+    billboard.AlwaysOnTop = true
+    billboard.Adornee = model.PrimaryPart
+    local txt = Instance.new("TextLabel", billboard)
+    txt.Size = UDim2.fromScale(1,1)
+    txt.BackgroundTransparency = 1
+    txt.TextScaled = true
+    txt.TextColor3 = Color3.new(1,1,1)
+    txt.TextStrokeTransparency = 0.6
+    txt.Text = model.Name
+    billboard.Parent = game.CoreGui
+    ESPs[model] = billboard
+end
+
+local function refreshESPs()
+    clearAllESP()
+    if State.PlayerESP then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character.PrimaryPart then
+                createESPForModel(plr.Character, {})
+            end
+        end
+    end
+    if State.MobESP then
+        for _, mob in pairs(workspace:GetDescendants()) do
+            if mob:IsA("Model") and mob:FindFirstChild("Humanoid") and (mob.PrimaryPart or mob:FindFirstChild("HumanoidRootPart")) then
+                createESPForModel(mob, {})
+            end
+        end
+    end
+    if State.OreESP then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and (obj.Name:match("[Oo]re") or obj.Name:match("[Rr]ock")) then
+                -- make a small Billboard for ores
+                createESPForModel({PrimaryPart = obj, Name = obj.Name})
+            end
+        end
+    end
+end
+
+-- --------------------------
+-- UI: Build Tabs & Elements
+-- --------------------------
+
+-- INFO
+do
+    local Tab = Window:Tab({ Title = "Info", Icon = "info" })
+    Tab:Section({ Title = "Warning" })
+    Tab:Label("⚠️ Use this script at your own risk. Don't redistribute without permissions.")
+    Tab:Button({ Title = "Copy Support Info", Callback = function() toClipboard("Perdi Hub | The Forge - Config") notify("Copied", "Support info copied") end })
+end
+
+-- AUTO FARM
+do
+    local Tab = Window:Tab({ Title = "Auto Farm", Icon = "pickaxe" })
+    local sec = Tab:Section({ Title = "Mining" })
+
+    sec:Toggle({ Title = "Auto Mine", Default = false, Callback = function(v) State.AutoMine = v startAutoMine() end })
+    sec:Dropdown({ Title = "Rock Types", Values = {"All","Stone","Iron","Gold","Mythril"}, Value = "All", Callback = function(v) State.RockType = v end })
+    sec:Toggle({ Title = "Avoid Mobs", Default = false, Callback = function(v) State.AvoidMobs = v end })
+    sec:Toggle({ Title = "Auto Mob Farm", Default = false, Callback = function(v) State.AutoMobFarm = v startAutoMobFarm() end })
+    sec:Dropdown({ Title = "Mob Types", Values = {"All","Slime","Golem","Wolf"}, Value = "All", Callback = function(v) State.MobType = v end })
+    sec:Toggle({ Title = "Use Pathfinding", Default = false, Callback = function(v) State.UsePathfinding = v end })
+    sec:Toggle({ Title = "Visualize Path", Default = false, Callback = function(v) State.VisualizePath = v end })
+
+    local moveSec = Tab:Section({ Title = "Movement Settings" })
+    moveSec:Slider({ Title = "Tween Speed", Min = 10, Max = 300, Value = 120, Callback = function(v) State.TweenSpeed = v end })
+    moveSec:Slider({ Title = "Offset Position", Min = -10, Max = 10, Value = 0, Callback = function(v) State.OffsetPosition = v end })
+    moveSec:Slider({ Title = "Offset Distance", Min = 0, Max = 50, Value = 5, Callback = function(v) State.OffsetDistance = v end })
+end
+
+-- COMBAT
+do
+    local Tab = Window:Tab({ Title = "Combat", Icon = "swords" })
+    local sec = Tab:Section({ Title = "Auto Parry" })
+    sec:Toggle({ Title = "Auto Parry", Default = false, Callback = function(v) State.AutoParry = v end })
+    sec:Slider({ Title = "Range", Min = 1, Max = 50, Value = 10, Callback = function(v) State.ParryRange = v end })
+    sec:Slider({ Title = "Delay", Min = 0, Max = 2, Value = 0.25, Callback = function(v) State.ParryDelay = v end })
+end
+
+-- FORGE
+do
+    local Tab = Window:Tab({ Title = "Forge", Icon = "flame" })
+    local sec1 = Tab:Section({ Title = "Auto Forge (Instant)" })
+    sec1:Toggle({ Title = "Auto Forge (Instant)", Default = false, Callback = function(v) State.AutoForgeInstant = v startAutoForge() end })
+    sec1:Dropdown({ Title = "Item Type", Values = {"Pickaxe","Sword","Armor","All"}, Value = "Pickaxe", Callback = function(v) State.ForgeItemType = v end })
+    sec1:Toggle({ Title = "Use Best Ores", Default = true, Callback = function(v) State.UseBestOres = v end })
+    sec1:Dropdown({ Title = "Ore Types", Values = {"All","Iron","Gold","Crystal"}, Value = "All", Callback = function(v) State.OreTypes = v end })
+    sec1:Slider({ Title = "Minimum Ores", Min = 0, Max = 100, Value = 5, Callback = function(v) State.MinOres = v end })
+
+    local sec2 = Tab:Section({ Title = "Auto Forge (Manual)" })
+    sec2:Toggle({ Title = "Auto Forge Manual", Default = false, Callback = function(v) State.AutoForgeManual = v end })
+    sec2:Button({ Title = "Goto Forge", Callback = function() -- TODO: teleport logic
+            notify("Goto Forge", "Teleport placeholder - adapt to game") end })
+end
+
+-- INVENTORY
+do
+    local Tab = Window:Tab({ Title = "Inventory", Icon = "backpack" })
+    local sec = Tab:Section({ Title = "Enhancement" })
+    sec:Toggle({ Title = "Auto Enhance", Default = false, Callback = function(v) State.AutoEnhance = v startAutoEnhance() end })
+    sec:Slider({ Title = "Enhance Until (+)", Min = 0, Max = 20, Value = 5, Callback = function(v) State.EnhanceUntil = v end })
+    sec:Slider({ Title = "Min Quality", Min = 0, Max = 100, Value = 20, Callback = function(v) State.MinQuality = v end })
+    sec:Slider({ Title = "Delay", Min = 0, Max = 5, Value = 1, Callback = function(v) State.EnhanceDelay = v end })
+    sec:Toggle({ Title = "Only Selected Types", Default = false, Callback = function(v) State.OnlySelectedTypes = v end })
+    sec:Dropdown({ Title = "Item Types", Values = {"Pickaxe","Sword","Armor","All"}, Value = "Pickaxe", Multi = true, Callback = function(v) State.EnhanceItemTypes = v end })
+
+    local sell = Tab:Section({ Title = "Auto Sell" })
+    sell:Toggle({ Title = "Auto Sell", Default = false, Callback = function(v) State.AutoSell = v startAutoSell() end })
+    sell:Slider({ Title = "Sell Below Quality", Min = 0, Max = 100, Value = 15, Callback = function(v) State.SellBelowQuality = v end })
+    sell:Button({ Title = "Goto Enhancer", Callback = function() notify("Goto Enhancer", "Placeholder - adapt to game") end })
+end
+
+-- SHOP
+do
+    local Tab = Window:Tab({ Title = "Shop", Icon = "store" })
+    local sec = Tab:Section({ Title = "Purchase Items" })
+    sec:Dropdown({ Title = "Purchase Items", Values = {"Pickaxe","Potion","Other Items"}, Value = "Pickaxe", Callback = function(v) State.ShopCategory = v end })
+    sec:Slider({ Title = "Amount", Min = 1, Max = 100, Value = 1, Callback = function(v) State.ShopAmount = v end })
+    sec:Button({ Title = "Purchase", Callback = function()
+        -- TODO: adapt to game's purchase remote
+        notify("Shop", "Purchase placeholder. Adapt remote call.")
+    end })
+end
+
+-- PLAYER ESP
+do
+    local Tab = Window:Tab({ Title = "Player ESP", Icon = "userCheck" })
+    local sec = Tab:Section({ Title = "Player ESP" })
+    sec:Toggle({ Title = "Player ESP", Default = false, Callback = function(v) State.PlayerESP = v refreshESPs() end })
+    sec:Toggle({ Title = "Boxes", Default = false, Callback = function(v) State.ESPBoxes = v refreshESPs() end })
+    sec:Toggle({ Title = "Names", Default = false, Callback = function(v) State.ESPNames = v refreshESPs() end })
+    sec:Toggle({ Title = "Health Bar", Default = false, Callback = function(v) State.ESPHealth = v refreshESPs() end })
+    sec:Toggle({ Title = "Distance", Default = false, Callback = function(v) State.ESPDistance = v refreshESPs() end })
+    sec:Toggle({ Title = "Weapon", Default = false, Callback = function(v) State.ESPWeapon = v refreshESPs() end })
+end
+
+-- MOB ESP
+do
+    local Tab = Window:Tab({ Title = "Mob ESP", Icon = "skull" })
+    local sec = Tab:Section({ Title = "Mob ESP" })
+    sec:Toggle({ Title = "Mob ESP", Default = false, Callback = function(v) State.MobESP = v refreshESPs() end })
+    sec:Toggle({ Title = "Boxes", Default = false, Callback = function(v) State.MobESPBoxes = v refreshESPs() end })
+    sec:Toggle({ Title = "Names", Default = false, Callback = function(v) State.MobESPNames = v refreshESPs() end })
+    sec:Toggle({ Title = "Health Bar", Default = false, Callback = function(v) State.MobESPHealth = v refreshESPs() end })
+    sec:Toggle({ Title = "Distance", Default = false, Callback = function(v) State.MobESPDistance = v refreshESPs() end })
+end
+
+-- WORLD ESP
+do
+    local Tab = Window:Tab({ Title = "World ESP", Icon = "globe" })
+    local sec = Tab:Section({ Title = "Ore ESP" })
+    sec:Toggle({ Title = "Ore ESP", Default = false, Callback = function(v) State.OreESP = v refreshESPs() end })
+    sec:Dropdown({ Title = "Ore Types", Values = {"All","Stone","Iron","Gold","Mythril"}, Value = "All", Multi = true, Callback = function(v) State.OreTypesSelected = v refreshESPs() end })
+    local shopsec = Tab:Section({ Title = "Shop ESP" })
+    shopsec:Toggle({ Title = "Shop ESP", Default = false, Callback = function(v) State.ShopESP = v refreshESPs() end })
+end
+
+-- ESP SETTINGS (merged to World ESP for convenience)
+do
+    local Tab = Window:Tab({ Title = "ESP Settings", Icon = "settings" })
+    local sec = Tab:Section({ Title = "Settings" })
+    sec:Slider({ Title = "Max Distance", Min = 50, Max = 5000, Value = 500, Callback = function(v) State.ESPMaxDistance = v refreshESPs() end })
+end
+
+-- FEATURES
+do
+    local Tab = Window:Tab({ Title = "Features", Icon = "zap" })
+    local sec = Tab:Section({ Title = "Main Features" })
+    sec:Toggle({ Title = "AutoMine", Default = false, Callback = function(v) State.Features.AutoMine = v State.AutoMine = v startAutoMine() end })
+    sec:Toggle({ Title = "AutoForge", Default = false, Callback = function(v) State.Features.AutoForge = v State.AutoForgeInstant = v startAutoForge() end })
+    sec:Toggle({ Title = "TheForge", Default = false, Callback = function(v) State.Features.TheForge = v end })
+end
+
+-- --------------------------
+-- Keybinds (Fly / Noclip)
+-- --------------------------
+do
+    local uis = game:GetService("UserInputService")
+    uis.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == State.Fly.Key then
+            State.Fly.Enabled = not State.Fly.Enabled
+            if State.Fly.Enabled then enableFly(State.Fly.Speed) else disableFly() end
+        elseif input.KeyCode == State.Noclip.Key then
+            State.Noclip.Enabled = not State.Noclip.Enabled
+            setNoclip(State.Noclip.Enabled)
+        end
+    end)
+end
+
+-- --------------------------
+-- Apply movement settings periodically
+-- --------------------------
+RunService.Heartbeat:Connect(function()
+    applyMovement()
+end)
+
+-- --------------------------
+-- Cleanup on script unload (best-effort)
+-- --------------------------
+local function cleanup()
+    disableFly()
+    setNoclip(false)
+    if automineLoop then automineLoop:Disconnect() automineLoop = nil end
+    if automobLoop then automobLoop:Disconnect() automobLoop = nil end
+    if autoforgeLoop then autoforgeLoop:Disconnect() autoforgeLoop = nil end
+    if autoenhanceLoop then autoenhanceLoop:Disconnect() autoenhanceLoop = nil end
+    if autosellLoop then autosellLoop:Disconnect() autosellLoop = nil end
+    clearAllESP()
+    notify("Perdi Hub", "Script unloaded / cleaned up")
+end
+
+-- Return Window for further chaining if needed
+return Window
